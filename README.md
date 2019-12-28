@@ -4,5 +4,6 @@ The following Rmd (text) files were used to analyse the trajectory of recovery f
 
 In the second part, the role of group based trajectory modeling to cluster the longitudinal trajectory of stroke deificit (NIHSS performed at regular interval). The work flow pipeline is as follow, obtain the data in wide format, convert the data to long format for group based trajectory modeling (akmedoids), return the cluster back to wide format for GLM analysis. The modelings were performed with PredictABEL package to explore discrimination and calibration. 
 
-In the third part we explored the role of genetic algorithm to perform feature selections [![here]()](AUC.Rmd). The chosen features were used in GLM analysis.     
-The fourth part deals with the use of T-distributed stochastic neighbor embedding [![here](./TSNE.png)](./TSNE.Rmd). This is a very nice techniqe for visualising the clustering of data.
+In the third part we explored the role of genetic algorithm to perform feature selections [![here](./predictabel-1.png)](./AUC.Rmd). The chosen features were used in GLM analysis. For this analysis, it tooks 1.7 hour on a surfacebook with 16GB RAM.     
+
+The fourth part deals with the use of T-distributed stochastic neighbor embedding. This is a very nice techniqe for visualising the clustering of data.[![here](./TSNE.png)](./TSNE.Rmd). 
