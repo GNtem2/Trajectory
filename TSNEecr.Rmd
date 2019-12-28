@@ -1,0 +1,163 @@
+---
+title: "TSNEecr"
+author: "gntem2"
+date: "27/12/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r data}
+
+library(Rtsne)
+library(ggplot2)
+library(dplyr)
+load("akm.train.test.rda")
+#colnames(train.test)
+
+set.seed(1234)
+
+train.test2<-na.omit(train.test)
+train.test2$NIHSS24<-train.test2$`24h`
+train.test2$NIHSSD3to5<-train.test2$`day3-5`
+
+#remove ID `24h` `day3-5`  mrs_D90 train 
+train.test2<-train.test2[,-c(1,11:13,14,17)]
+unique_a<-unique(train.test2)
+#unique_a$Infection<-as.factor(unique_a$mrs_D90)
+
+#perplexity is related to importance of neighbours
+#or number of nearest neighbour k involved in many manifold learners
+aniT<-Rtsne(as.matrix(unique_a),dims = 2, perplexity = 10)
+```
+## workflow use tsne for random forest classification
+```{r plot}
+plot(aniT$Y,col=unique_a$Outcome,asp=1)
+tsne_plot <- data.frame(x = aniT$Y[,1], y = aniT$Y[,2], col = unique_a$Outcome)
+
+ggplot(tsne_plot) + geom_point(aes(x=x, y=y, color=col))
+##
+```
+##https://www.r-bloggers.com/clustering-mixed-data-types-in-r/
+###gower distance for clustering mixed data
+
+```{r gower}
+library(cluster) #gower
+gower_dist <- daisy(unique_a,
+                    metric = "gower",
+                    type = list(logratio = 3))
+
+####
+#check gower
+gower_mat <- as.matrix(gower_dist)
+# Output most similar pair
+
+unique_a[
+  which(gower_mat == min(gower_mat[gower_mat != min(gower_mat)]),
+        arr.ind = TRUE)[1, ], ]
+
+unique_a[
+  which(gower_mat == min(gower_mat[gower_mat != max(gower_mat)]),
+        arr.ind = TRUE)[1, ], ]
+
+
+####
+tsne_obj <- Rtsne(gower_dist, perplexity=10,is_distance = TRUE)
+plot(tsne_obj$Y,col=unique_a$Outcome,asp=1)
+tsne_plot <- data.frame(x = tsne_obj$Y[,1], y = tsne_obj$Y[,2], col = unique_a$Outcome)
+
+tsne_plot<-cbind(unique_a,tsne_plot)
+
+#color from https://www.computerhope.com/htmcolor.htm
+ggplot(tsne_plot) + geom_point(aes(x=x, y=y, color=as.factor(col), shape = as.factor(Akmed)))+labs(color="Disability Outcome",shape="Akmedoid Cluster")+scale_color_manual(labels = c("Good", "Poor"), values = c("#0000FF","#FF0000"))
+```
+
+```{r pam}
+#PAM
+# Calculate silhouette width for many k using PAM
+
+sil_width <- c(NA)
+
+for(i in 2:10){
+  
+  pam_fit <- pam(gower_dist,
+                 diss = TRUE,
+                 k = i)
+  
+  sil_width[i] <- pam_fit$silinfo$avg.width
+  
+}
+
+# Plot sihouette width (higher is better)
+
+plot(1:10, sil_width,
+     xlab = "Number of clusters",
+     ylab = "Silhouette Width")
+lines(1:10, sil_width)
+#
+pam_fit <- pam(gower_dist, diss = TRUE, k = 2)
+
+tsne_data <- tsne_obj$Y %>%
+  data.frame() %>%
+  setNames(c("X", "Y")) %>%
+  mutate(cluster = factor(pam_fit$clustering),
+         Rankin = unique_a$Outcome)
+
+tsne_data<-cbind(unique_a[,-c(13)],tsne_data)
+
+ggplot(aes(x = X, y = Y), data = tsne_data) +
+  geom_point(aes(shape = as.factor(Akmed), color =cluster))+labs(color="Disability Outcome",shape="Akmedoid Cluster")+scale_color_manual(labels = c("Good", "Poor"), values = c("#0000FF","#FF0000"))
+
+#https://mark-borg.github.io/blog/2016/tsne-ml/
+
+```
+
+```{r randomforest}
+library(caret)
+library(pROC)
+library(randomForest)
+#outcome vairable must be factor
+
+#model 1
+A1= tsne_plot[,-c(11,16)]
+B =as.factor(tsne_plot$Outcome)
+  
+rf1 <- randomForest(B~., data=A1, ntree=200, proximity=TRUE, importance=TRUE, keep.forest=TRUE, do.trace=TRUE)   
+
+mean(rf1$err.rate)
+pred <- predict(rf1, A1)
+table(pred, B)
+mean(pred == B)
+varImpPlot(rf1)
+
+#model 2 #nihssd3to5
+A2= tsne_plot[,-c(11,13,16)]
+rf2 <- randomForest(B~., data=A2, ntree=200, proximity=TRUE, importance=TRUE, keep.forest=TRUE, do.trace=TRUE)   
+
+mean(rf2$err.rate)
+pred <- predict(rf2, A2)
+table(pred, B)
+mean(pred == B)
+varImpPlot(rf2)
+
+#model 3 #akmed
+A3=tsne_plot[,-c(10,11,13,16)]
+rf3 <- randomForest(B~., data=A3, ntree=200, proximity=TRUE, importance=TRUE, keep.forest=TRUE, do.trace=TRUE)   
+
+mean(rf3$err.rate)
+pred <- predict(rf3, A3)
+table(pred, B)
+mean(pred == B)
+varImpPlot(rf3)
+
+```
+v
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
