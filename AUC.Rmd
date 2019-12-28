@@ -1,0 +1,177 @@
+---
+title: "AUC"
+author: "Jenny"
+date: "18 December 2019"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r train.test division}
+
+library(DataExplorer)
+library(dplyr)
+library(Rmisc)
+library(pROC)
+
+load("akm.train.test.rda")
+
+#Cluster frequency
+PatientClusters <- table(train.test$Akmed)
+PatientClusters
+prop.table(PatientClusters)
+
+##ensure ID is maintained
+#Move Outcome to last column
+#train.test <- train.test %>% select(-Outcome,Outcome)
+#train.test [, 2:15] <- scale (train.test [,2:15])
+
+train.testfilt<-na.omit(train.test) 
+train.testfilt$NIHSS24<-train.testfilt$`24h`
+train.testfilt$NIHSSD3to5<-train.testfilt$`day3-5`
+
+
+```
+
+
+
+##Discrimination & Calibration with PredictABEL
+
+```{r predictabel}
+
+
+library(PredictABEL)
+
+cOutcome=16 #outcome
+
+#model1  
+cNonGenPred1=c(3) 	#age
+cNonGenPredCat1=c(2,15) #trial #akmed
+cGenPred1=c(0)	#
+cGenPredCat1=c(8,5) # diabetes #chol
+cID=c(1) #ID=number
+
+#model2 NIHSS 24 h
+cNonGenPred2=c(3) #
+cNonGenPredCat2=c(2,15)
+cGenPred2=c(18)
+cGenPredCat2=c(8)
+
+#model3  
+cNonGenPred3=c(3) 	#age
+cNonGenPredCat3=c(2,15) #trial akmed
+cGenPred3=c(19)	#age
+cGenPredCat3=c(8) # diabetes
+cID=c(1) #ID=number
+
+#model4 genetic algorith feature seclection  
+cNonGenPred4=c(3) 	#age
+cNonGenPredCat4=c(2,15,5) #chol 
+cGenPred4=c(5,18,19)	#age
+cGenPredCat4=c(8) # diabetes
+cID=c(1) #ID=number
+
+riskmodel1=fitLogRegModel(data=train.testfilt,cOutcome=cOutcome,cNonGenPreds=cNonGenPred1,cNonGenPredsCat=cNonGenPredCat1,cGenPreds=cGenPred1,cGenPredsCat=cGenPredCat1)
+
+riskmodel2=fitLogRegModel(data=train.testfilt,cOutcome=cOutcome,cNonGenPreds=cNonGenPred2,cNonGenPredsCat=cNonGenPredCat2,cGenPreds=cGenPred2,cGenPredsCat=cGenPredCat2)
+
+riskmodel3=fitLogRegModel(data=train.testfilt,cOutcome=cOutcome,cNonGenPreds=cNonGenPred3,cNonGenPredsCat=cNonGenPredCat3,cGenPreds=cGenPred3,cGenPredsCat=cGenPredCat3)
+
+#genetic algorithm
+riskmodel4=fitLogRegModel(data=train.testfilt,cOutcome=cOutcome,cNonGenPreds=cNonGenPred4,cNonGenPredsCat=cNonGenPredCat4,cGenPreds=cGenPred4,cGenPredsCat=cGenPredCat4)
+
+predRisk1=predRisk(riskmodel1)
+predRisk2=predRisk(riskmodel2)
+predRisk3=predRisk(riskmodel3)
+predRisk4=predRisk(riskmodel4)
+ 
+#label for ROC
+labels <- c("Model1=age+cluster+Trial AUC 0.803", "Model2=Model1+NIHSS 24h AUC 0.916","Model1+NIHSS Day3-5 AUC 0.926","Model Genetic Algorith Feature selection AUC 0.930")
+
+# produce ROC curve
+plotROC(data=train.testfilt, cOutcome=cOutcome, predrisk=cbind(predRisk1,predRisk2,predRisk3,predRisk4), labels=labels)
+
+ORmultivariate(riskModel=riskmodel1,filename="multiOR.txt") #Brier score
+ORmultivariate(riskModel=riskmodel2,filename="multiOR.txt") #Brier score
+```
+#7 level classification
+```{r ga}
+library(caret)
+library(doParallel)
+
+train.testfilt2<-train.testfilt[,c(2:10,15,13,18:19)]
+
+x=train.testfilt2[,-c(11)]
+y=as.factor(train.testfilt2$mrs_D90) #7 levels
+
+registerDoParallel(4) # Registrer a parallel backend for train
+getDoParWorkers() # check that there are 4 workers
+
+
+ga_ctrl <- gafsControl(functions = rfGA, # Assess fitness with RF
+                       method = "cv",    # 10 fold cross validation
+                       genParallel=TRUE, # Use parallel programming
+                       allowParallel = TRUE)
+
+## 
+set.seed(10)
+lev <- c("0","1","2","3","4","5","6")     # Set the levels
+ 
+system.time(rf_ga3 <- gafs(x = x, y = y,
+                           iters = 100, # 100 generations of algorithm
+                           popSize = 20, # population size for each generation
+                           levels = lev,
+                           gafsControl = ga_ctrl))
+plot(rf_ga3)
+
+rf_ga3$ga 
+
+```
+
+
+#binary classification
+```{r ga}
+#library(caret)
+#library(doParallel)
+
+train.testfilt3<-train.testfilt[,c(2:10,15:16,18:19)]
+
+x=train.testfilt3[,-c(11)]
+y=as.factor(train.testfilt3$Outcome)
+
+registerDoParallel(4) # Registrer a parallel backend for train
+getDoParWorkers() # check that there are 4 workers
+
+
+ga_ctrl <- gafsControl(functions = rfGA, # Assess fitness with RF
+                       method = "cv",    # 10 fold cross validation
+                       genParallel=TRUE, # Use parallel programming
+                       allowParallel = TRUE)
+
+## 
+set.seed(10)
+lev <- c("0","1")     # Set the levels
+ 
+system.time(rf_ga4 <- gafs(x = x, y = y,
+                           iters = 100, # 100 generations of algorithm
+                           popSize = 20, # population size for each generation
+                           levels = lev,
+                           gafsControl = ga_ctrl))
+plot(rf_ga4)
+
+rf_ga4$ga #final model
+#$final
+#[1] "age"        "sex"        "hxhighchol" "hxdiab"  
+#[5] "baseline"   "NIHSS24"    "NIHSSD3to5"
+```

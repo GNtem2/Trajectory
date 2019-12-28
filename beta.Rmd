@@ -1,0 +1,251 @@
+---
+title: "betaregression"
+author: "Jenny"
+date: "16 December 2019"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r data, echo=FALSE, message=FALSE}
+
+library (tidyverse)
+library (akmedoids)
+library (ggplot2)
+library (dplyr)
+
+load("final.combinedtrials.rda")
+#exclude day 90 NIHSS as we are looking at beta regression from baseline to day 7
+
+##isolate NIHSS for trajectories and rename them Y0, Y1, Y2
+NIHSSwide <- total [,c(1, 2, 10:12)]
+NIHSSwide <- NIHSSwide %>% 
+  rename(
+    Y0 = baseline,
+    Y1 = `24h`,
+    Y2 = `day3-5`
+    )
+NIHSSwide <- arrange(NIHSSwide, ID)
+
+##convert from wide to long
+longimp <- gather(NIHSSwide, period, NIHSS, Y0:Y2, factor_key=TRUE)
+longimp$period <- as.character(longimp$period)
+longimp$period[longimp$period == "Y0"] <- "0"
+longimp$period[longimp$period == "Y1"] <- "1"
+longimp$period[longimp$period == "Y2"] <- "2"
+longimp <- arrange (longimp, ID)
+
+##filter out baseline to 24 hours of merged data
+Y0Y1 <- filter (longimp, period < 2)
+
+
+#linear regression Y0Y1
+##Control
+Y0Y1C <- filter(Y0Y1, T==0)
+model1 = lm(NIHSS~period, data = Y0Y1C)
+#plot (model1)
+summary (model1)
+
+##beta and 95CI
+Y0Y1C.beta <- summary(model1)$coefficients[2, 1]
+Y0Y1C.beta <- round(Y0Y1C.beta,digits=2)
+Y0Y1C.beta
+Y0Y1C.cicalc <- confint(model1)
+Y0Y1C.lower <- Y0Y1C.cicalc[2,1]
+Y0Y1C.lower
+Y0Y1C.lower <- round(Y0Y1C.lower,digits=2)
+Y0Y1C.upper <- Y0Y1C.cicalc[2,2]
+Y0Y1C.upper <- round(Y0Y1C.upper,digits=2)
+Y0Y1C.upper
+
+##Intervention
+Y0Y1T <- filter(Y0Y1, T==1)
+model2 = lm(NIHSS~period, data = Y0Y1T)
+#plot (model2)
+summary (model2)
+
+##beta and 95CI
+Y0Y1T.beta <- summary(model2)$coefficients[2, 1]
+Y0Y1T.beta <- round(Y0Y1T.beta,digits=2)
+Y0Y1T.beta
+Y0Y1T.cicalc <- confint(model2)
+Y0Y1T.lower <- Y0Y1T.cicalc[2,1]
+Y0Y1T.lower <- round(Y0Y1T.lower,digits=2)
+Y0Y1T.lower
+Y0Y1T.upper <- Y0Y1T.cicalc[2,2]
+Y0Y1T.upper <- round(Y0Y1T.upper,digits=2)
+Y0Y1T.upper
+
+#linear regression Y1 to Y2
+##Control
+Y3orless <- filter (longimp, period < 3)
+Y1Y2 <- filter (Y3orless, period >0)
+
+Y1Y2C <- filter (Y1Y2, T==0)
+model3 = lm(NIHSS~period, data = Y1Y2C)
+#plot (model3)
+summary (model3)
+
+Y1Y2C.beta <- summary(model3)$coefficients[2, 1]
+Y1Y2C.beta <- round(Y1Y2C.beta,digits=2)
+Y1Y2C.beta
+Y1Y2C.cicalc <- confint(model3)
+Y1Y2C.lower <- Y1Y2C.cicalc[2,1]
+Y1Y2C.lower <- round(Y1Y2C.lower,digits=2)
+Y1Y2C.lower
+Y1Y2C.upper <- Y1Y2C.cicalc[2,2]
+Y1Y2C.upper <- round(Y1Y2C.upper,digits=2)
+Y1Y2C.upper
+
+
+##Intervention
+Y1Y2T <- filter (Y1Y2, T==1)
+model4 = lm(NIHSS~period, data = Y1Y2T)
+#plot (model4)
+summary (model4)
+
+Y1Y2T.beta <- summary(model4)$coefficients[2, 1]
+Y1Y2T.beta <- round(Y1Y2T.beta,digits=2)
+Y1Y2T.beta
+Y1Y2T.cicalc <- confint(model4)
+Y1Y2T.lower <- Y1Y2T.cicalc[2,1]
+Y1Y2T.lower <- round(Y1Y2T.lower,digits=2)
+Y1Y2T.lower
+Y1Y2T.upper <- Y0Y1T.cicalc[2,2]
+Y1Y2T.upper <- round(Y1Y2T.upper,digits=2)
+Y1Y2T.upper
+
+#summarise data using group_by
+##link periods together
+longimp$Time_Period <- as.numeric(longimp$period)
+
+longimp2<-longimp %>%
+  group_by(Time_Period, T) %>%
+  summarise(NIHSS_Score=mean(NIHSS, na.rm=TRUE),
+            sdY=sd(NIHSS, na.rm = TRUE),
+            nY = n()) %>%
+  mutate (seY = sdY / sqrt(nY),
+         lowerY = NIHSS_Score - qt(1 - (0.05 / 2), nY - 1) * seY,
+         upperY = NIHSS_Score + qt(1 - (0.05 / 2), nY - 1) * seY)
+pd <- position_dodge2(width = 0.2) # move them .2 to the left and right
+```
+########################
+#plot
+
+```{r line plot}
+  ##line plot of merged data
+ggplot(longimp,aes(x=as.factor(period),y=NIHSS))+geom_line(aes(color=as.factor(T),group=ID))+scale_color_manual(values = c("#FF3333","#99CCFF")) +  xlab("Time")+ylab("NIHSS")+labs(color="ECR vs Control")
+
+
+longimp2$'Time Epoch'<-longimp2$Time_Period
+gbase  = ggplot(longimp2, aes(y=NIHSS_Score, colour=as.factor(T))) +
+  geom_errorbar(aes(ymin=lowerY, ymax=upperY) , width=.3, position=pd)+
+geom_point(position=pd) +
+#change legend  
+labs(x="Time Period", y=" NIHSS", color= "ECR vs Control")+
+scale_color_manual(labels = c("Control", "ECR"), values = c("#FF3333","#99CCFF"))+
+geom_label(
+    label="β1=-7.01 (-8.16 - -5.85)", 
+    x=.5,
+    y=10,
+    label.padding = unit(0.55, "lines"), # Rectangle size around label
+    label.size = 0.35,
+    color = "black",
+    fill="#99CCFF" 
+  )+
+geom_label(
+    label="β2=-3.12 (-4.41 - - 1.84)", 
+    x=1.5,
+    y=6.5,
+    label.padding = unit(0.55, "lines"), # Rectangle size around label
+    label.size = 0.35,
+    color = "black",
+    fill="#99CCFF" 
+  )+  
+geom_label(
+    label="β1= -2.45 (-3.65 - -1.24)", 
+    x=.5,
+    y=16.5,
+    label.padding = unit(0.55, "lines"), # Rectangle size around label
+    label.size = 0.35,
+    color = "black",
+    fill="#FF3333"
+  )+
+  geom_label(
+    label="β2=-1.41 (-2.92 - -0.09)", 
+    x=1.5,
+    y=14.5,
+    label.padding = unit(0.55, "lines"), # Rectangle size around label
+    label.size = 0.35,
+    color = "black",
+    fill="#FF3333"
+  )
+gline = gbase + geom_line(position=pd) 
+print(gline +aes(x=`Time Epoch`))+
+  scale_x_continuous(
+  breaks = c(0, 1, 2),
+  label = c("Baseline", "24 hours", "Day 3-5")
+)
+
+```
+
+#t-test
+```{r ttest}
+##Y0Y1
+Y0Y1_ECRvsMM = Y0Y1C.beta - Y0Y1T.beta
+SE.Y0Y1C = summary(model1)$coefficients[2, 2]
+SE.Y0Y1T = summary(model2)$coefficients[2, 2]
+si2.Y0Y1= (((SE.Y0Y1C^2)) + ((SE.Y0Y1T^2)))^.5
+#calculate p value ##P=0 between control and intervention Y0Y1
+Y0Y1.ttest = 2*pnorm (-abs(Y0Y1_ECRvsMM/si2.Y0Y1))
+Y0Y1.ttest <- round(Y0Y1.ttest, digits=2)
+Y0Y1.ttest
+
+
+##Y1Y2
+Y1Y2_ECRvsMM = Y1Y2C.beta - Y1Y2T.beta
+SE.Y1Y2C = summary(model1)$coefficients[2, 2]
+SE.Y1Y2T = summary(model2)$coefficients[2, 2]
+si2.Y1Y2= (((SE.Y1Y2C^2)) + ((SE.Y1Y2T^2)))^.5
+#calculate p value ##P=0.04 between control and intervention Y1Y2
+Y1Y2.ttest = 2*pnorm (-abs(Y1Y2_ECRvsMM/si2.Y1Y2))
+Y1Y2.ttest <- round(Y1Y2.ttest, digits=2)
+Y1Y2.ttest
+
+
+##Control
+Controls = Y0Y1C.beta - Y1Y2C.beta
+SE.Y0Y1C = summary(model1)$coefficients[2, 2]
+SE.Y1Y2C = summary(model3)$coefficients[2, 2]
+si2.Control= (((SE.Y0Y1C^2)) + ((SE.Y1Y2C^2)))^.5
+#calculate p value ##P=0.29 between controls
+Control.ttest = 2*pnorm (-abs(Controls/si2.Control))
+Control.ttest <- round(Control.ttest, digits=2)
+Control.ttest
+
+
+##Interventions
+Ints = Y0Y1T.beta - Y1Y2T.beta
+SE.Y0Y1T = summary(model2)$coefficients[2, 2]
+SE.Y1Y2T = summary(model4)$coefficients[2, 2]
+si2.Int= (((SE.Y0Y1T^2)) + ((SE.Y1Y2T^2)))^.5
+#calculate p value ##P=0 between Interventions
+Int.ttest = 2*pnorm (-abs(Ints/si2.Int))
+Int.ttest <- round(Int.ttest, digits=2)
+Int.ttest
+
+
+```
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
